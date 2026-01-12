@@ -4,6 +4,19 @@
 from libc.stdint cimport uint8_t, uint32_t, uint64_t, UINT64_MAX
 from libc.stddef cimport size_t
 
+# Cross-platform threading via Python's PyThread API (works on Windows, Linux, macOS)
+cdef extern from "pythread.h":
+    ctypedef void* PyThread_type_lock
+
+    PyThread_type_lock PyThread_allocate_lock() nogil
+    void PyThread_free_lock(PyThread_type_lock lock) nogil
+    int PyThread_acquire_lock(PyThread_type_lock lock, int waitflag) nogil
+    void PyThread_release_lock(PyThread_type_lock lock) nogil
+
+    # Wait flag values
+    int WAIT_LOCK    # 1 - block until acquired
+    int NOWAIT_LOCK  # 0 - return immediately
+
 cdef extern from "lzma.h":
     # Return codes
     ctypedef enum lzma_ret:
@@ -48,9 +61,11 @@ cdef extern from "lzma.h":
     ctypedef struct lzma_internal:
         pass
 
-    # Allocator (opaque)
+    # Allocator with function pointers for custom memory management
     ctypedef struct lzma_allocator:
-        pass
+        void *(*alloc)(void *opaque, size_t nmemb, size_t size) nogil
+        void (*free)(void *opaque, void *ptr) nogil
+        void *opaque
 
     # Main stream struct
     ctypedef struct lzma_stream:
@@ -130,3 +145,11 @@ cdef extern from "lzma.h":
     uint64_t lzma_easy_decoder_memusage(uint32_t preset) nogil
     uint64_t lzma_physmem() nogil
     uint32_t lzma_cputhreads() nogil
+
+    # Version checking (for CVE-2025-31115 mitigation)
+    uint32_t lzma_version_number() nogil
+    const char* lzma_version_string() nogil
+
+    # Check type inspection
+    lzma_check lzma_get_check(const lzma_stream *strm) nogil
+    bint lzma_check_is_supported(lzma_check check) nogil

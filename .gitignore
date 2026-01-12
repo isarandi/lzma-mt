@@ -1,0 +1,25 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.so
+*.c
+!src/lzma_mt/lzma_mt.pyx
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.hypothesis/
+
+# Version file (generated)
+src/lzma_mt/_version.py
+
+# IDE
+.idea/
+
+# Docs build
+docs/_build/
+
+# Local files
+CLAUDE.md

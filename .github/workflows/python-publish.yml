@@ -1,0 +1,81 @@
+name: Build and Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.22
+        env:
+          CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-* pp39-* pp310-*
+          # liblzma is available in manylinux images by default
+          CIBW_BEFORE_ALL_LINUX: yum install -y xz-devel || apt-get update && apt-get install -y liblzma-dev
+          CIBW_BEFORE_ALL_MACOS: brew install xz
+          CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows
+          CIBW_ENVIRONMENT_WINDOWS: >
+            CMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows
+            LIB=C:/vcpkg/installed/x64-windows/lib;$LIB
+            INCLUDE=C:/vcpkg/installed/x64-windows/include;$INCLUDE
+          # Bundle liblzma DLL into Windows wheels
+          CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair -w {dest_dir} {wheel} --add-path C:/vcpkg/installed/x64-windows/bin
+          CIBW_ARCHS_MACOS: x86_64 arm64
+          CIBW_TEST_COMMAND: python -c "import lzma_mt; print('lzma_mt imported successfully')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    # Only publish on release, not on workflow_dispatch
+    if: github.event_name == 'release'
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

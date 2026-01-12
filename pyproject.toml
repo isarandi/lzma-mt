@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools>=64",
+    "setuptools>=74.1",
     "wheel",
     "cython>=3.0.0",
     "setuptools_scm>=8",
@@ -8,15 +8,15 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lzma_mt"
+name = "lzma-mt"
 dynamic = ["version"]
 description = "Multi-threaded LZMA/XZ compression via Cython wrapper around liblzma"
 authors = [
     { name = "Your Name", email = "you@example.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.8"
-license = { text = "MIT" }
+requires-python = ">=3.9"
+license = "MIT"
 
 keywords = [
     "lzma",
@@ -29,29 +29,45 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Cython",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Topic :: System :: Archiving :: Compression",
 ]
 
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/username/lzma_mt"
+Repository = "https://github.com/username/lzma_mt"
+Documentation = "https://lzma-mt.readthedocs.io/"
+Issues = "https://github.com/username/lzma_mt/issues"
+Author = "https://yourwebsite.com"
+
 [project.optional-dependencies]
 test = [
     "pytest>=7.0",
 ]
+docs = [
+    "sphinx",
+    "pydata-sphinx-theme",
+    "sphinx-autoapi",
+    "sphinxcontrib-bibtex",
+    "setuptools-scm",
+    "toml",
+]
 dev = [
-    "lzma_mt[test]",
+    "lzma_mt[test,docs]",
 ]
 
 [tool.setuptools_scm]
@@ -61,6 +77,9 @@ version_file = "src/lzma_mt/_version.py"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+ext-modules = [
+    {name = "lzma_mt.lzma_mt", sources = ["src/lzma_mt/lzma_mt.pyx"], libraries = ["lzma"]}
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
