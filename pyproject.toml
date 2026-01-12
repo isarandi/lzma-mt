@@ -76,9 +76,6 @@ version_file = "src/lzma_mt/_version.py"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-ext-modules = [
-    {name = "lzma_mt.lzma_mt", sources = ["src/lzma_mt/lzma_mt.pyx"], libraries = ["lzma"]}
-]
 
 [tool.setuptools.packages.find]
 where = ["src"]

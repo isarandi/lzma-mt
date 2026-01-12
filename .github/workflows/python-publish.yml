@@ -45,7 +45,6 @@ jobs:
               LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET:-10.13}"
             make -j$(sysctl -n hw.ncpu)
             sudo make install
-          CIBW_ENVIRONMENT_MACOS: 'CPATH="/usr/local/include" LIBRARY_PATH="/usr/local/lib"'
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
           # Windows: use dynamic linking and bundle DLL with delvewheel
           CIBW_BEFORE_ALL_WINDOWS: |
