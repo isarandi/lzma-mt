@@ -55,6 +55,7 @@ jobs:
           CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows/include" LIB="C:/vcpkg/installed/x64-windows/lib"'
           CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: 'delvewheel repair -w {dest_dir} {wheel} --add-path C:/vcpkg/installed/x64-windows/bin'
+          CIBW_ARCHS_LINUX: x86_64
           CIBW_ARCHS_MACOS: x86_64 arm64
           CIBW_ARCHS_WINDOWS: AMD64
 
