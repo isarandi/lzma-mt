@@ -65,9 +65,6 @@ jobs:
     name: Publish to PyPI
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
     # Only publish on release, not on workflow_dispatch
     if: github.event_name == 'release'
 
@@ -79,3 +76,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
