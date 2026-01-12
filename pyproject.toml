@@ -55,6 +55,7 @@ Issues = "https://github.com/isarandi/lzma-mt/issues"
 [project.optional-dependencies]
 test = [
     "pytest>=7.0",
+    "hypothesis",
 ]
 docs = [
     "sphinx",
