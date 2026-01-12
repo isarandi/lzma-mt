@@ -84,7 +84,7 @@ where = ["src"]
 lzma_mt = ["py.typed", "*.pyi"]
 
 [tool.cibuildwheel]
-test-requires = ["pytest"]
+test-requires = ["pytest", "hypothesis"]
 test-command = "pytest {project}/tests -v"
 
 [tool.pytest.ini_options]
