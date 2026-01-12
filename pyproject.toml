@@ -48,11 +48,9 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/username/lzma_mt"
-Repository = "https://github.com/username/lzma_mt"
-Documentation = "https://lzma-mt.readthedocs.io/"
-Issues = "https://github.com/username/lzma_mt/issues"
-Author = "https://yourwebsite.com"
+Homepage = "https://github.com/isarandi/lzma-mt"
+Repository = "https://github.com/isarandi/lzma-mt"
+Issues = "https://github.com/isarandi/lzma-mt/issues"
 
 [project.optional-dependencies]
 test = [
@@ -83,6 +81,9 @@ ext-modules = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+lzma_mt = ["py.typed", "*.pyi"]
 
 [tool.cibuildwheel]
 test-requires = ["pytest"]

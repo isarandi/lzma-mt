@@ -29,6 +29,10 @@ jobs:
           # liblzma is available in manylinux images by default
           CIBW_BEFORE_ALL_LINUX: yum install -y xz-devel || apt-get update && apt-get install -y liblzma-dev
           CIBW_BEFORE_ALL_MACOS: brew install xz
+          CIBW_ENVIRONMENT_MACOS: >
+            LDFLAGS="-L/usr/local/opt/xz/lib -L/opt/homebrew/opt/xz/lib"
+            CFLAGS="-I/usr/local/opt/xz/include -I/opt/homebrew/opt/xz/include"
+            CPPFLAGS="-I/usr/local/opt/xz/include -I/opt/homebrew/opt/xz/include"
           CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows
           CIBW_ENVIRONMENT_WINDOWS: >
             CMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows
