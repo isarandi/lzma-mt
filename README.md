@@ -107,8 +107,8 @@ Multi-threading is only used for XZ format (`FORMAT_XZ`). Other formats fall bac
 xz-utils versions 5.3.3alpha through 5.8.0 have a use-after-free vulnerability in the multi-threaded decoder. This module:
 
 - Checks the xz-utils version at runtime
-- Raises `RuntimeError` if a vulnerable version is detected with `threads != 1`
-- Allows single-threaded mode (`threads=1`) on any version
+- Silently falls back to single-threaded decompression on vulnerable versions
+- Uses multi-threaded decompression only on safe versions (< 5.3.3alpha or >= 5.8.1)
 
 Check your system:
 
