@@ -7,7 +7,7 @@ A drop-in replacement for Python's `lzma` module with multi-threading support, i
 ## Installation
 
 ```bash
-pip install lzma_mt
+pip install lzma-mt
 ```
 
 ### Build from source
