@@ -49,7 +49,7 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
           # Use static triplet to avoid DLL bundling issues
           CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows-static
-          CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows-static/include" LIB="C:/vcpkg/installed/x64-windows-static/lib" LZMA_API_STATIC=1'
+          CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows-static/include" LIB="C:/vcpkg/installed/x64-windows-static/lib" CL="/DLZMA_API_STATIC"'
           CIBW_ARCHS_MACOS: x86_64 arm64
           CIBW_TEST_COMMAND: python -c "import lzma_mt; print('lzma_mt imported successfully')"
 
