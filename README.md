@@ -1,4 +1,4 @@
-# lzma_mt
+# LZMA Multi-Threaded
 
 Multi-threaded LZMA/XZ compression for Python.
 
