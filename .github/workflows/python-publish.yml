@@ -35,7 +35,7 @@ jobs:
             cd xz-${XZ_VERSION}
             ./configure --disable-shared --enable-static --disable-xz --disable-xzdec \
               --disable-lzmadec --disable-lzmainfo --disable-scripts --disable-doc \
-              --prefix=/usr/local
+              --prefix=/usr/local CFLAGS="-fPIC -O2"
             make -j$(nproc)
             make install
           # Build xz from source as static lib, install to /usr/local (default search path)
