@@ -23,8 +23,9 @@ elif sys.platform == "win32":
     if lib:
         library_dirs = lib.split(";")
 else:
-    # Linux: system paths work by default
-    pass
+    # Linux: xz built from source and installed to /usr/local (for manylinux)
+    include_dirs = ["/usr/local/include"]
+    library_dirs = ["/usr/local/lib"]
 
 ext_modules = [
     Extension(

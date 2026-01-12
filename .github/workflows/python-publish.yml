@@ -28,12 +28,16 @@ jobs:
         env:
           # Testing: only cp312 for now
           CIBW_BUILD: cp312-*
-          # Install xz-devel on various Linux distros (manylinux=yum, musllinux=apk, debian=apt)
+          # Build xz from source on Linux (manylinux has old xz without MT decoder API)
           CIBW_BEFORE_ALL_LINUX: |
-            if command -v yum &> /dev/null; then yum install -y xz-devel
-            elif command -v apk &> /dev/null; then apk add --no-cache xz-dev
-            elif command -v apt-get &> /dev/null; then apt-get update && apt-get install -y liblzma-dev
-            fi
+            XZ_VERSION=5.6.3
+            curl -L https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.gz | tar xz
+            cd xz-${XZ_VERSION}
+            ./configure --disable-shared --enable-static --disable-xz --disable-xzdec \
+              --disable-lzmadec --disable-lzmainfo --disable-scripts --disable-doc \
+              --prefix=/usr/local
+            make -j$(nproc)
+            make install
           # Build xz from source as static lib, install to /usr/local (default search path)
           # cibuildwheel sets MACOSX_DEPLOYMENT_TARGET before before-all
           CIBW_BEFORE_ALL_MACOS: |
