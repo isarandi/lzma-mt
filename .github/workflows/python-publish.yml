@@ -48,10 +48,12 @@ jobs:
               CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -O2" \
               LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
             make -j$(sysctl -n hw.ncpu) && make install
-          CIBW_ENVIRONMENT_MACOS: >
-            LDFLAGS="-L/tmp/xz-static/lib"
-            CFLAGS="-I/tmp/xz-static/include"
-            CPPFLAGS="-I/tmp/xz-static/include"
+          # Link to standard paths so compiler finds them
+          CIBW_BEFORE_BUILD_MACOS: |
+            sudo mkdir -p /usr/local/include /usr/local/lib
+            sudo ln -sf /tmp/xz-static/include/lzma.h /usr/local/include/
+            sudo ln -sf /tmp/xz-static/include/lzma /usr/local/include/
+            sudo ln -sf /tmp/xz-static/lib/liblzma.a /usr/local/lib/
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
           CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows
           CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows/include" LIB="C:/vcpkg/installed/x64-windows/lib"'

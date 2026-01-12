@@ -473,9 +473,9 @@ def decompress(data, format=FORMAT_AUTO, memlimit=None, filters=None, *, threads
     if threads < 0:
         raise ValueError(f"threads must be non-negative, got {threads}")
 
-    # CVE-2025-31115 check for MT decoder
-    if threads != 1:
-        _check_mt_decoder_version()
+    # CVE-2025-31115: silently fall back to single-threaded on vulnerable versions
+    if threads != 1 and not _is_mt_decoder_safe():
+        threads = 1
 
     # Handle concatenated streams like CPython: decompress each stream separately
     # and catch errors on trailing junk (matching lzma.decompress behavior)
@@ -733,11 +733,8 @@ cdef class LZMADecompressor:
             memlimit: Memory limit in bytes. None means no limit.
             filters: Custom filter chain for FORMAT_RAW.
             threads: Number of threads (default 1). Use 0 for auto-detect.
-                    Only used for XZ format.
-
-        Raises:
-            RuntimeError: If xz-utils version is vulnerable to CVE-2025-31115
-                         and threads != 1.
+                    Only used for XZ format. Silently falls back to 1 on
+                    xz-utils versions with CVE-2025-31115.
         """
         cdef lzma.lzma_mt mt_options
         cdef lzma.lzma_ret ret
@@ -768,9 +765,9 @@ cdef class LZMADecompressor:
         else:
             mem_stop = UINT64_MAX
 
-        # CVE-2025-31115 check for MT decoder
-        if threads != 1:
-            _check_mt_decoder_version()
+        # CVE-2025-31115: silently fall back to single-threaded on vulnerable versions
+        if threads != 1 and not _is_mt_decoder_safe():
+            threads = 1
 
         _init_stream(&self.strm)
 
