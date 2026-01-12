@@ -47,9 +47,11 @@ jobs:
             sudo make install
           CIBW_ENVIRONMENT_MACOS: 'CPATH="/usr/local/include" LIBRARY_PATH="/usr/local/lib"'
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
-          # Use static triplet to avoid DLL bundling issues
-          CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows-static
-          CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows-static/include" LIB="C:/vcpkg/installed/x64-windows-static/lib" CL="/DLZMA_API_STATIC"'
+          # Windows: use dynamic linking and bundle DLL with delvewheel
+          CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows
+          CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows/include" LIB="C:/vcpkg/installed/x64-windows/lib"'
+          CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: 'delvewheel repair -w {dest_dir} {wheel} --add-path C:/vcpkg/installed/x64-windows/bin'
           CIBW_ARCHS_MACOS: x86_64 arm64
           CIBW_TEST_COMMAND: python -c "import lzma_mt; print('lzma_mt imported successfully')"
 
