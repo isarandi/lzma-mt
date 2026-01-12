@@ -26,8 +26,12 @@ jobs:
         uses: pypa/cibuildwheel@v2.22
         env:
           CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-* pp39-* pp310-*
-          # liblzma is available in manylinux images by default
-          CIBW_BEFORE_ALL_LINUX: yum install -y xz-devel || apt-get update && apt-get install -y liblzma-dev
+          # Install xz-devel on various Linux distros (manylinux=yum, musllinux=apk, debian=apt)
+          CIBW_BEFORE_ALL_LINUX: |
+            if command -v yum &> /dev/null; then yum install -y xz-devel
+            elif command -v apk &> /dev/null; then apk add --no-cache xz-dev
+            elif command -v apt-get &> /dev/null; then apt-get update && apt-get install -y liblzma-dev
+            fi
           # Build xz from source as static lib with proper deployment target
           CIBW_BEFORE_ALL_MACOS: |
             XZ_VERSION=5.6.3
