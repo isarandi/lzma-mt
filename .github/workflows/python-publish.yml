@@ -15,7 +15,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Testing: only macOS for now
+        os: [macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +26,8 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22
         env:
-          CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-* pp39-* pp310-*
+          # Testing: only cp312 for now
+          CIBW_BUILD: cp312-*
           # Install xz-devel on various Linux distros (manylinux=yum, musllinux=apk, debian=apt)
           CIBW_BEFORE_ALL_LINUX: |
             if command -v yum &> /dev/null; then yum install -y xz-devel
@@ -54,7 +56,8 @@ jobs:
           CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows/include" LIB="C:/vcpkg/installed/x64-windows/lib"'
           CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: 'delvewheel repair -v -w {dest_dir} {wheel} --add-path C:/vcpkg/installed/x64-windows/bin'
-          CIBW_ARCHS_MACOS: x86_64 arm64
+          # Testing: only arm64 for now (macos-latest is arm64)
+          CIBW_ARCHS_MACOS: arm64
           CIBW_TEST_COMMAND: python -c "import lzma_mt; print('lzma_mt imported successfully')"
 
       - uses: actions/upload-artifact@v4
