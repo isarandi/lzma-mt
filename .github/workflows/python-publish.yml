@@ -28,11 +28,27 @@ jobs:
           CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-* pp39-* pp310-*
           # liblzma is available in manylinux images by default
           CIBW_BEFORE_ALL_LINUX: yum install -y xz-devel || apt-get update && apt-get install -y liblzma-dev
-          CIBW_BEFORE_ALL_MACOS: brew install xz
+          # Build xz from source as static lib with proper deployment target
+          CIBW_BEFORE_ALL_MACOS: |
+            XZ_VERSION=5.6.3
+            if [[ $(uname -m) == "arm64" ]]; then
+              export MACOSX_DEPLOYMENT_TARGET=11.0
+            else
+              export MACOSX_DEPLOYMENT_TARGET=10.13
+            fi
+            curl -L https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.gz | tar xz
+            cd xz-${XZ_VERSION}
+            ./configure --disable-shared --enable-static --disable-xz --disable-xzdec \
+              --disable-lzmadec --disable-lzmainfo --disable-scripts --disable-doc \
+              --prefix=/tmp/xz-static \
+              CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -O2" \
+              LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
+            make -j$(sysctl -n hw.ncpu) && make install
           CIBW_ENVIRONMENT_MACOS: >
-            LDFLAGS="-L/usr/local/opt/xz/lib -L/opt/homebrew/opt/xz/lib"
-            CFLAGS="-I/usr/local/opt/xz/include -I/opt/homebrew/opt/xz/include"
-            CPPFLAGS="-I/usr/local/opt/xz/include -I/opt/homebrew/opt/xz/include"
+            LDFLAGS="-L/tmp/xz-static/lib"
+            CFLAGS="-I/tmp/xz-static/include"
+            CPPFLAGS="-I/tmp/xz-static/include"
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
           CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows
           CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows/include" LIB="C:/vcpkg/installed/x64-windows/lib"'
           # Bundle liblzma DLL into Windows wheels
