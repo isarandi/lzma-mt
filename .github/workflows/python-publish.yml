@@ -32,34 +32,23 @@ jobs:
             elif command -v apk &> /dev/null; then apk add --no-cache xz-dev
             elif command -v apt-get &> /dev/null; then apt-get update && apt-get install -y liblzma-dev
             fi
-          # Build xz from source as static lib with proper deployment target
+          # Build xz from source as static lib, install to /usr/local (default search path)
+          # cibuildwheel sets MACOSX_DEPLOYMENT_TARGET before before-all
           CIBW_BEFORE_ALL_MACOS: |
             XZ_VERSION=5.6.3
-            if [[ $(uname -m) == "arm64" ]]; then
-              export MACOSX_DEPLOYMENT_TARGET=11.0
-            else
-              export MACOSX_DEPLOYMENT_TARGET=10.13
-            fi
             curl -L https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.gz | tar xz
             cd xz-${XZ_VERSION}
             ./configure --disable-shared --enable-static --disable-xz --disable-xzdec \
               --disable-lzmadec --disable-lzmainfo --disable-scripts --disable-doc \
-              --prefix=/tmp/xz-static \
-              CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -O2" \
-              LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
-            make -j$(sysctl -n hw.ncpu) && make install
-          # Link to standard paths so compiler finds them
-          CIBW_BEFORE_BUILD_MACOS: |
-            sudo mkdir -p /usr/local/include /usr/local/lib
-            sudo ln -sf /tmp/xz-static/include/lzma.h /usr/local/include/
-            sudo ln -sf /tmp/xz-static/include/lzma /usr/local/include/
-            sudo ln -sf /tmp/xz-static/lib/liblzma.a /usr/local/lib/
+              --prefix=/usr/local \
+              CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET:-10.13} -O2" \
+              LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET:-10.13}"
+            make -j$(sysctl -n hw.ncpu)
+            sudo make install
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
-          CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows
-          CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows/include" LIB="C:/vcpkg/installed/x64-windows/lib"'
-          # Bundle liblzma DLL into Windows wheels
-          CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
-          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair -w {dest_dir} {wheel} --add-path C:/vcpkg/installed/x64-windows/bin
+          # Use static triplet to avoid DLL bundling issues
+          CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows-static
+          CIBW_ENVIRONMENT_WINDOWS: 'INCLUDE="C:/vcpkg/installed/x64-windows-static/include" LIB="C:/vcpkg/installed/x64-windows-static/lib" LZMA_API_STATIC=1'
           CIBW_ARCHS_MACOS: x86_64 arm64
           CIBW_TEST_COMMAND: python -c "import lzma_mt; print('lzma_mt imported successfully')"
 
