@@ -45,6 +45,7 @@ jobs:
               LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET:-10.13}"
             make -j$(sysctl -n hw.ncpu)
             sudo make install
+          CIBW_ENVIRONMENT_MACOS: 'CFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib"'
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
           # Use static triplet to avoid DLL bundling issues
           CIBW_BEFORE_ALL_WINDOWS: vcpkg install liblzma:x64-windows-static
