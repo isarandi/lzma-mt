@@ -12,16 +12,21 @@ or pass threads=1 to use single-threaded mode.
 import builtins
 import io
 import os
+import sys
 
 # _compression is a private CPython module, may not exist in all versions
 try:
-    from _compression import BaseStream, DecompressReader
+    if sys.version_info >= (3, 14):
+        from compression._common._streams import BaseStream, DecompressReader
+    else:
+        from _compression import BaseStream, DecompressReader
 except ImportError:
     # Fallback implementations (copied from CPython's _compression.py)
     BUFFER_SIZE = io.DEFAULT_BUFFER_SIZE
 
     class BaseStream(io.BufferedIOBase):
         """Mode-checking helper functions."""
+
         def _check_not_closed(self):
             if self.closed:
                 raise ValueError("I/O operation on closed file")
