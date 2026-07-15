@@ -28,7 +28,7 @@ jobs:
           CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*
           # Build xz from source on Linux (manylinux has old xz without MT decoder API)
           CIBW_BEFORE_ALL_LINUX: |
-            XZ_VERSION=5.6.3
+            XZ_VERSION=5.8.1
             curl -L https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.gz | tar xz
             cd xz-${XZ_VERSION}
             ./configure --disable-shared --enable-static --disable-xz --disable-xzdec \
@@ -39,7 +39,7 @@ jobs:
           # Build xz from source as static lib, install to /usr/local (default search path)
           # cibuildwheel sets MACOSX_DEPLOYMENT_TARGET before before-all
           CIBW_BEFORE_ALL_MACOS: |
-            XZ_VERSION=5.6.3
+            XZ_VERSION=5.8.1
             curl -L https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.gz | tar xz
             cd xz-${XZ_VERSION}
             ./configure --disable-shared --enable-static --disable-xz --disable-xzdec \

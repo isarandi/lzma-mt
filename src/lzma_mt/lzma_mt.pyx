@@ -18,10 +18,10 @@ class LZMAError(Exception):
 
 
 # CVE-2025-31115: lzma_stream_decoder_mt has use-after-free in xz 5.3.3alpha-5.8.0
-# Version numbers: 5.3.3alpha=50030301, 5.8.0=50080000, 5.8.1=50080001
-DEF LZMA_VERSION_VULNERABLE_START = 50030301  # 5.3.3alpha
-DEF LZMA_VERSION_VULNERABLE_END = 50080000    # 5.8.0 (inclusive)
-DEF LZMA_VERSION_MT_SAFE = 50080001           # 5.8.1
+# liblzma encodes versions as major*10000000 + minor*10000 + patch*10 + stability,
+# where stability is 0=alpha, 1=beta, 2=stable (see lzma/version.h).
+DEF LZMA_VERSION_VULNERABLE_START = 50030030  # 5.3.3alpha
+DEF LZMA_VERSION_MT_SAFE = 50080012           # 5.8.1 (first fixed release)
 
 # Constants used internally (others are exported directly from __init__.py)
 from lzma import (
