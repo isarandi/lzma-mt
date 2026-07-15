@@ -94,21 +94,24 @@ The `threads` parameter controls parallelism:
 
 | Value | Behavior |
 |-------|----------|
-| `1` | Single-threaded (default, matches stdlib behavior) |
+| `1` | Single-threaded (default). Uses the same liblzma code paths as the stdlib; compressed output is byte-identical to `lzma.compress()` |
 | `0` | Auto-detect based on CPU count |
 | `N` | Use N threads |
 
-Multi-threading is only used for XZ format (`FORMAT_XZ`). Other formats fall back to single-threaded stdlib implementation.
+Multi-threading is only used for XZ format (`FORMAT_XZ`). Other formats fall back to the single-threaded stdlib implementation; with `FORMAT_AUTO`, the container format is detected from the data, so legacy `.lzma` files work too.
 
 ## Security
 
 ### CVE-2025-31115
 
-xz-utils versions 5.3.3alpha through 5.8.0 have a use-after-free vulnerability in the multi-threaded decoder. This module:
+xz-utils versions 5.3.3alpha through 5.8.0 have a use-after-free vulnerability in the multi-threaded decoder (`lzma_stream_decoder_mt`). This module:
 
 - Checks the xz-utils version at runtime
-- Silently falls back to single-threaded decompression on vulnerable versions
-- Uses multi-threaded decompression only on safe versions (< 5.3.3alpha or >= 5.8.1)
+- Silently falls back to the single-threaded decoder on vulnerable versions — the same code path the stdlib uses, which is unaffected by the CVE
+- Uses the multi-threaded decoder only on xz-utils >= 5.8.1
+- With `threads=1` (the default), always uses the single-threaded decoder, on all versions
+
+The official wheels bundle xz-utils 5.8.1.
 
 Check your system:
 

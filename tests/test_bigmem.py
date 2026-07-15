@@ -7,9 +7,10 @@ These tests are skipped by default because they require:
 - ~10GB+ of RAM
 - Several minutes to complete
 
-Run with: pytest tests/test_bigmem.py -v --run-bigmem
+Run with: RUN_BIGMEM=1 pytest tests/test_bigmem.py -v
 """
 
+import os
 import random
 import pytest
 
@@ -20,14 +21,6 @@ import lzma_mt
 _4G = 4 * 1024 * 1024 * 1024
 
 
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers", "bigmem: mark test as requiring large memory (>4GB)"
-    )
-
-
-# Check if bigmem tests should run
-import os
 def _should_skip_bigmem():
     """Skip bigmem tests unless explicitly requested via env var."""
     return os.environ.get("RUN_BIGMEM", "0") != "1"
@@ -35,7 +28,7 @@ def _should_skip_bigmem():
 
 bigmem = pytest.mark.skipif(
     _should_skip_bigmem(),
-    reason="Bigmem tests skipped by default. Use --run-bigmem to run."
+    reason="Bigmem tests skipped by default. Set RUN_BIGMEM=1 to run."
 )
 
 

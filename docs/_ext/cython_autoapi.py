@@ -247,6 +247,8 @@ def parse_pyx_class(class_text: str, module_name: str) -> dict | None:
                 is_classmethod=pending_classmethod,
             )
             if method_data and method_data.get("docstring"):
+                if pending_property:
+                    method_data["properties"].append("property")
                 methods.append(method_data)
         in_method = False
         method_lines = []

@@ -30,7 +30,8 @@ github_match = re.match(r"https://github\.com/([^/]+)/?", repo_url)
 github_username = github_match[1] if github_match else ""
 
 project = project_info["name"]
-release = setuptools_scm.get_version("..")
+release = setuptools_scm.get_version(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 version = ".".join(release.split(".")[:2])
 main_module_name = project_slug.replace("-", "_")
 

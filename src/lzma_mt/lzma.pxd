@@ -17,6 +17,16 @@ cdef extern from "pythread.h":
     int WAIT_LOCK    # 1 - block until acquired
     int NOWAIT_LOCK  # 0 - return immediately
 
+# Fail the build with a clear message on liblzma versions that lack the
+# multithreaded decoder API (added in 5.3.3alpha, e.g. Ubuntu 20.04 has 5.2.4)
+cdef extern from *:
+    """
+    #include <lzma.h>
+    #if LZMA_VERSION < 50030030
+    #error "lzma_mt requires liblzma >= 5.4 (xz-utils) for the multithreaded decoder API. Please install a newer xz/liblzma."
+    #endif
+    """
+
 cdef extern from "lzma.h":
     # Return codes
     ctypedef enum lzma_ret:

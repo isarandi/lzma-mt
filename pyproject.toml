@@ -12,7 +12,7 @@ name = "lzma-mt"
 dynamic = ["version"]
 description = "Multi-threaded LZMA/XZ compression via Cython wrapper around liblzma"
 authors = [
-    { name = "Your Name", email = "you@example.com" }
+    { name = "Istvan Sarandi", email = "prog@istvansarandi.com" }
 ]
 readme = "README.md"
 requires-python = ">=3.9"
