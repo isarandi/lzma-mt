@@ -12,9 +12,10 @@ cdef Py_ssize_t PY_SSIZE_T_MAX = sys.maxsize
 cimport lzma_mt.lzma as lzma
 
 
-class LZMAError(Exception):
-    """Exception raised for LZMA-related errors."""
-    pass
+# Use the stdlib exception class so that `except lzma.LZMAError` and
+# `except lzma_mt.LZMAError` are interchangeable, including for errors
+# raised by the stdlib fallback paths.
+LZMAError = _lzma.LZMAError
 
 
 # CVE-2025-31115: lzma_stream_decoder_mt has use-after-free in xz 5.3.3alpha-5.8.0
@@ -31,6 +32,9 @@ from lzma import (
 
 DEF INITIAL_BUFFER_SIZE = 65536  # 64 KB
 
+# Magic bytes at the start of every .xz stream
+_XZ_MAGIC = b"\xfd7zXZ\x00"
+
 
 # =============================================================================
 # CVE-2025-31115 Version Check
@@ -44,16 +48,6 @@ cdef bint _is_mt_decoder_safe() noexcept nogil:
     if version < LZMA_VERSION_VULNERABLE_START:
         return True
     return False
-
-
-cdef inline void _check_mt_decoder_version() except *:
-    """Raise RuntimeError if MT decoder has CVE-2025-31115 vulnerability."""
-    if not _is_mt_decoder_safe():
-        version_str = lzma.lzma_version_string().decode('ascii')
-        raise RuntimeError(
-            f"xz-utils {version_str} has CVE-2025-31115 vulnerability in MT decoder. "
-            f"Upgrade to 5.8.1+ or use threads=1 for untrusted input."
-        )
 
 
 def get_xz_version():
@@ -111,6 +105,20 @@ cdef inline uint32_t _get_effective_threads(uint32_t threads) noexcept nogil:
     return effective
 
 
+cdef inline uint64_t _default_memlimit_threading() noexcept nogil:
+    """Default soft memory limit for MT decoding: a quarter of physical RAM.
+
+    When decoding would need more than this, liblzma reduces the thread
+    count or falls back to direct mode (output stays correct). This keeps
+    adversarial or very large-block streams from causing huge allocations,
+    mirroring the xz tool's default.
+    """
+    cdef uint64_t phys = lzma.lzma_physmem()
+    if phys == 0:
+        return 1024 * 1024 * 1024  # RAM size unknown; assume 1 GiB is fine
+    return phys // 4
+
+
 cdef inline void _setup_encoder_mt(
     lzma.lzma_mt *opts,
     uint32_t preset,
@@ -144,29 +152,39 @@ cdef inline void _setup_decoder_mt(
     """
     memset(opts, 0, sizeof(lzma.lzma_mt))
     opts.threads = _get_effective_threads(threads)
-    opts.flags = lzma.LZMA_CONCATENATED if concatenated else 0
+    # TELL flags make lzma_code() report the integrity check type once the
+    # stream header has been parsed (used for the .check property)
+    opts.flags = lzma.LZMA_TELL_NO_CHECK | lzma.LZMA_TELL_ANY_CHECK
+    if concatenated:
+        opts.flags |= lzma.LZMA_CONCATENATED
     opts.memlimit_threading = memlimit_threading
     opts.memlimit_stop = memlimit_stop
 
 
 cdef inline void _raise_lzma_error(lzma.lzma_ret ret) except *:
-    """Raise an appropriate exception for an lzma error code."""
+    """Raise an appropriate exception for an lzma error code.
+
+    Exception types and messages match CPython's _lzmamodule.c, so code
+    written against the stdlib sees the same errors.
+    """
     if ret == lzma.LZMA_MEM_ERROR:
-        raise MemoryError("LZMA: Memory allocation failed")
+        raise MemoryError
     elif ret == lzma.LZMA_MEMLIMIT_ERROR:
-        raise MemoryError("LZMA: Memory limit exceeded")
+        raise LZMAError("Memory usage limit exceeded")
     elif ret == lzma.LZMA_FORMAT_ERROR:
-        raise LZMAError("LZMA: Input format not recognized")
+        raise LZMAError("Input format not supported by decoder")
     elif ret == lzma.LZMA_OPTIONS_ERROR:
-        raise LZMAError("LZMA: Invalid or unsupported options")
+        raise LZMAError("Invalid or unsupported options")
     elif ret == lzma.LZMA_DATA_ERROR:
-        raise LZMAError("LZMA: Data is corrupt")
+        raise LZMAError("Corrupt input data")
     elif ret == lzma.LZMA_BUF_ERROR:
-        raise LZMAError("LZMA: Buffer error (truncated input?)")
+        raise LZMAError("Insufficient buffer space")
     elif ret == lzma.LZMA_PROG_ERROR:
-        raise LZMAError("LZMA: Programming error")
+        raise LZMAError("Internal error")
+    elif ret == lzma.LZMA_UNSUPPORTED_CHECK:
+        raise LZMAError("Unsupported integrity check")
     else:
-        raise LZMAError(f"LZMA: Unknown error code {ret}")
+        raise LZMAError(f"Unrecognized error from liblzma: {ret}")
 
 
 # Block sizes matching CPython's pycore_blocks_output_buffer.h
@@ -458,45 +476,40 @@ def decompress(data, format=FORMAT_AUTO, memlimit=None, filters=None, *, threads
         memlimit: Memory limit in bytes. None means no limit (default).
         filters: Custom filter chain for FORMAT_RAW (list of dicts).
         threads: Number of threads (default 1). Use 0 for auto-detect.
-                Only used for XZ format.
+                Multi-threading applies to XZ data only, and falls back to
+                the single-threaded decoder on xz-utils versions affected
+                by CVE-2025-31115.
 
     Returns:
         Decompressed data as bytes.
     """
-    # Fall back to stdlib for formats that don't support MT, or custom filters
-    # MT decoder only supports XZ format (FORMAT_XZ and FORMAT_AUTO which auto-detects)
+    # The stdlib handles formats that liblzma's XZ/auto decoders don't
+    # cover, as well as custom filter chains
     if format == FORMAT_RAW or format == FORMAT_ALONE or filters is not None:
         return _lzma.decompress(data, format=format, memlimit=memlimit, filters=filters)
 
-    # For FORMAT_AUTO or FORMAT_XZ, we can use MT decoder
-    # Parameter validation
+    if format != FORMAT_AUTO and format != FORMAT_XZ:
+        raise ValueError(f"Invalid container format: {format}")
+
     if threads < 0:
         raise ValueError(f"threads must be non-negative, got {threads}")
 
-    # CVE-2025-31115: silently fall back to single-threaded on vulnerable versions
-    if threads != 1 and not _is_mt_decoder_safe():
-        threads = 1
+    # Match stdlib: accept any bytes-like object, reject the rest
+    if not isinstance(data, bytes):
+        data = bytes(memoryview(data))
 
-    # Handle concatenated streams like CPython: decompress each stream separately
-    # and catch errors on trailing junk (matching lzma.decompress behavior)
+    # Handle concatenated streams like the stdlib: decompress each stream
+    # separately and ignore trailing junk after a complete stream
     results = []
-    remaining = bytes(data)
-
-    while remaining:
+    while True:
+        decompressor = LZMADecompressor(format=format, memlimit=memlimit, threads=threads)
         try:
-            decompressor = LZMADecompressor(
-                format=format,
-                memlimit=memlimit,
-                threads=threads
-            )
-            result = decompressor.decompress(remaining)
-        except (LZMAError, MemoryError):
+            result = decompressor.decompress(data)
+        except LZMAError:
             if results:
-                # We already have results; treat this as trailing junk
-                break
+                break  # Leftover data is not a valid LZMA/XZ stream; ignore it
             else:
-                # Error on first stream; re-raise
-                raise
+                raise  # Error on the first stream
 
         results.append(result)
 
@@ -504,7 +517,9 @@ def decompress(data, format=FORMAT_AUTO, memlimit=None, filters=None, *, threads
             raise LZMAError(
                 "Compressed data ended before the end-of-stream marker was reached")
 
-        remaining = decompressor.unused_data
+        data = decompressor.unused_data
+        if not data:
+            break
 
     return b"".join(results)
 
@@ -704,6 +719,12 @@ cdef class LZMADecompressor:
     Matches the stdlib lzma.LZMADecompressor API exactly, with an additional
     'threads' parameter for multi-threaded decompression.
 
+    With threads=1 (the default), the same single-threaded liblzma decoder
+    as the stdlib is used, for all formats. With threads != 1, liblzma's
+    multi-threaded decoder is used; it only supports the XZ format, so for
+    FORMAT_AUTO the container format is detected from the first input bytes
+    and non-XZ data is handed to the stdlib decompressor instead.
+
     WARNING: When processing untrusted input, always set memlimit to prevent
     decompression bombs from exhausting memory.
 
@@ -720,9 +741,16 @@ cdef class LZMADecompressor:
         bint _eof
         bint _needs_input
         bint _errored  # Track if decompression has encountered an error
+        int _check     # Integrity check type, CHECK_UNKNOWN until known
         bytes _unused_data
         bytes _input_buffer  # Buffered input not yet consumed by liblzma
         object _fallback  # stdlib LZMADecompressor for non-MT cases
+        object _memlimit  # memlimit as passed by the caller
+        # Deferred MT decoder setup for FORMAT_AUTO: the first input bytes
+        # decide between the MT XZ decoder and the stdlib decompressor
+        bint _pending_init
+        uint32_t _pending_threads
+        uint64_t _pending_memstop
 
     def __cinit__(self, format=FORMAT_AUTO, memlimit=None, filters=None, *, threads=1):
         """
@@ -733,11 +761,9 @@ cdef class LZMADecompressor:
             memlimit: Memory limit in bytes. None means no limit.
             filters: Custom filter chain for FORMAT_RAW.
             threads: Number of threads (default 1). Use 0 for auto-detect.
-                    Only used for XZ format. Silently falls back to 1 on
-                    xz-utils versions with CVE-2025-31115.
+                    Only used for XZ format. Falls back to the single-threaded
+                    decoder on xz-utils versions with CVE-2025-31115.
         """
-        cdef lzma.lzma_mt mt_options
-        cdef lzma.lzma_ret ret
         cdef uint64_t mem_stop
 
         self._fallback = None
@@ -745,16 +771,22 @@ cdef class LZMADecompressor:
         self._eof = False
         self._needs_input = True
         self._errored = False
+        self._check = CHECK_UNKNOWN
         self._unused_data = b""
         self._input_buffer = b""
+        self._memlimit = memlimit
+        self._pending_init = False
         self.lock = NULL
 
-        # Fall back to stdlib for formats that don't support MT, or custom filters
-        # MT decoder only supports XZ format (FORMAT_XZ and FORMAT_AUTO)
+        # The stdlib handles formats that liblzma's XZ/auto decoders don't
+        # cover, as well as custom filter chains
         if format == FORMAT_RAW or format == FORMAT_ALONE or filters is not None:
             self._fallback = _lzma.LZMADecompressor(
                 format=format, memlimit=memlimit, filters=filters)
             return
+
+        if format != FORMAT_AUTO and format != FORMAT_XZ:
+            raise ValueError(f"Invalid container format: {format}")
 
         # Parameter validation
         if threads < 0:
@@ -765,29 +797,77 @@ cdef class LZMADecompressor:
         else:
             mem_stop = UINT64_MAX
 
-        # CVE-2025-31115: silently fall back to single-threaded on vulnerable versions
+        # CVE-2025-31115: the MT decoder in xz 5.3.3alpha-5.8.0 has a
+        # use-after-free bug, so use the single-threaded decoder there
         if threads != 1 and not _is_mt_decoder_safe():
             threads = 1
-
-        _init_stream(&self.strm)
 
         # Allocate cross-platform lock (works on Windows, Linux, macOS)
         self.lock = lzma.PyThread_allocate_lock()
         if self.lock == NULL:
             raise MemoryError("Failed to allocate lock")
 
-        # Set up custom allocator
+        try:
+            if threads == 1:
+                # Same decoder as the stdlib; under FORMAT_AUTO it also
+                # handles FORMAT_ALONE data
+                self._init_st_decoder(format, mem_stop)
+            elif format == FORMAT_XZ:
+                self._init_mt_decoder(<uint32_t>threads, mem_stop)
+            else:
+                # FORMAT_AUTO with multi-threading: the MT decoder only
+                # supports XZ, so wait for the first input bytes to
+                # identify the container format (see decompress())
+                self._pending_init = True
+                self._pending_threads = <uint32_t>threads
+                self._pending_memstop = mem_stop
+        except:
+            lzma.PyThread_free_lock(self.lock)
+            self.lock = NULL
+            raise
+
+    cdef void _init_st_decoder(self, object format, uint64_t mem_stop) except *:
+        """Initialize the single-threaded decoder (same as the stdlib uses)."""
+        cdef lzma.lzma_ret ret
+        # TELL flags make lzma_code() report the integrity check type once
+        # the stream header has been parsed (used for the .check property)
+        cdef uint32_t flags = lzma.LZMA_TELL_NO_CHECK | lzma.LZMA_TELL_ANY_CHECK
+
+        _init_stream(&self.strm)
         _setup_allocator(&self.alloc)
         self.strm.allocator = &self.alloc
 
-        _setup_decoder_mt(&mt_options, <uint32_t>threads, mem_stop, mem_stop, False)
+        if format == FORMAT_XZ:
+            ret = lzma.lzma_stream_decoder(&self.strm, mem_stop, flags)
+        else:
+            ret = lzma.lzma_auto_decoder(&self.strm, mem_stop, flags)
+        if ret != lzma.LZMA_OK:
+            lzma.lzma_end(&self.strm)  # Clean up any partial allocations
+            _raise_lzma_error(ret)
+        self.initialized = True
+
+    cdef void _init_mt_decoder(self, uint32_t threads, uint64_t mem_stop) except *:
+        """Initialize the multi-threaded decoder (XZ format only)."""
+        cdef lzma.lzma_mt mt_options
+        cdef lzma.lzma_ret ret
+        cdef uint64_t mem_threading
+
+        # Soft limit above which liblzma decodes with fewer threads or in
+        # direct mode instead of failing
+        if mem_stop != UINT64_MAX:
+            mem_threading = mem_stop
+        else:
+            mem_threading = _default_memlimit_threading()
+
+        _init_stream(&self.strm)
+        _setup_allocator(&self.alloc)
+        self.strm.allocator = &self.alloc
+
+        _setup_decoder_mt(&mt_options, threads, mem_threading, mem_stop, False)
         ret = lzma.lzma_stream_decoder_mt(&self.strm, &mt_options)
         if ret != lzma.LZMA_OK:
             lzma.lzma_end(&self.strm)  # Clean up any partial allocations
-            lzma.PyThread_free_lock(self.lock)
-            self.lock = NULL
             _raise_lzma_error(ret)
-
         self.initialized = True
 
     def __dealloc__(self):
@@ -829,14 +909,12 @@ cdef class LZMADecompressor:
     def check(self):
         """Return the integrity check type used by the compressed stream.
 
-        Returns CHECK_UNKNOWN before decompression begins or if the
-        check type cannot be determined.
+        Returns CHECK_UNKNOWN until decompression has progressed far
+        enough to determine it.
         """
         if self._fallback is not None:
             return self._fallback.check
-        if not self.initialized:
-            return CHECK_UNKNOWN
-        return lzma.lzma_get_check(&self.strm)
+        return self._check
 
     def decompress(self, data, max_length=-1):
         """
@@ -865,6 +943,11 @@ cdef class LZMADecompressor:
             uint8_t *next_out
             Py_ssize_t avail_out
             bytes combined_input
+            bint is_xz
+
+        # Match stdlib: accept any bytes-like object, reject the rest
+        if not isinstance(data, bytes):
+            data = bytes(memoryview(data))
 
         # Release GIL before acquiring lock to prevent deadlock
         with nogil:
@@ -873,14 +956,35 @@ cdef class LZMADecompressor:
             if self._eof:
                 raise ValueError("Decompressor has reached end of stream")
             if self._errored:
-                raise ValueError("Decompressor encountered an error")
+                raise LZMAError("Decompressor is in an error state")
 
             # Combine buffered input with new data
             if self._input_buffer:
-                combined_input = self._input_buffer + bytes(data)
+                combined_input = self._input_buffer + data
                 self._input_buffer = b""
             else:
-                combined_input = bytes(data)
+                combined_input = data
+
+            # Deferred decoder choice for multi-threaded FORMAT_AUTO
+            if self._pending_init:
+                if len(combined_input) < len(_XZ_MAGIC):
+                    if _XZ_MAGIC.startswith(combined_input):
+                        # Not enough bytes yet to identify the format
+                        self._input_buffer = combined_input
+                        self._needs_input = True
+                        return b""
+                    is_xz = False
+                else:
+                    is_xz = combined_input.startswith(_XZ_MAGIC)
+                self._pending_init = False
+                if is_xz:
+                    self._init_mt_decoder(self._pending_threads, self._pending_memstop)
+                else:
+                    # Not XZ (e.g. legacy .lzma): multi-threading does not
+                    # apply, so delegate to the stdlib decompressor
+                    self._fallback = _lzma.LZMADecompressor(
+                        format=FORMAT_AUTO, memlimit=self._memlimit)
+                    return self._fallback.decompress(combined_input, max_length)
 
             input_len = <size_t>len(combined_input)
 
@@ -891,14 +995,11 @@ cdef class LZMADecompressor:
                     self._needs_input = False  # We have buffered data
                 return b""
 
-            # Fast path: no input and no buffered data
-            if input_len == 0:
-                self._needs_input = True
-                return b""
-
-            # Get pointer to combined input
             input_view = combined_input
-            input_data = &input_view[0]
+            # Avoid UB: don't take the address of an empty buffer. Empty
+            # input still pumps lzma_code() once, so that output buffered
+            # inside liblzma from earlier calls can be retrieved.
+            input_data = &input_view[0] if input_len > 0 else NULL
 
             buf = _BlocksOutputBuffer()
             avail_out = buf.init_and_grow(<Py_ssize_t>max_length, &next_out)

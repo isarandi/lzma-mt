@@ -172,9 +172,9 @@ class TestStreamingCompression:
             lzd.decompress(b"nyan")
 
     def test_decompressor_memlimit(self):
-        """Test memory limit enforcement."""
+        """Test memory limit enforcement raises LZMAError (matching stdlib)."""
         lzd = lzma_mt.LZMADecompressor(memlimit=1024)
-        with pytest.raises(MemoryError):
+        with pytest.raises(lzma_mt.LZMAError):
             lzd.decompress(COMPRESSED_XZ)
 
     def test_decompressor_xz(self):
@@ -260,7 +260,7 @@ class TestStreamingCompression:
         with pytest.raises(lzma_mt.LZMAError):
             lzd.decompress(COMPRESSED_BOGUS)
         # Previously, a second call could crash due to internal inconsistency
-        with pytest.raises(ValueError):
+        with pytest.raises(lzma_mt.LZMAError):
             lzd.decompress(COMPRESSED_BOGUS)
 
     def test_decompressor_multistream(self):
@@ -356,8 +356,8 @@ class TestFunctionCompress:
     """
 
     def test_decompress_memlimit(self):
-        """Test memory limit in decompress function."""
-        with pytest.raises(MemoryError):
+        """Test memory limit in decompress function raises LZMAError (matching stdlib)."""
+        with pytest.raises(lzma_mt.LZMAError):
             lzma_mt.decompress(COMPRESSED_XZ, memlimit=1024)
 
     def test_decompress_good_input(self):

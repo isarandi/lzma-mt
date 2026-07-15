@@ -316,22 +316,35 @@ class TestLZMADecompressor:
         assert result == b"x" * 100
 
     def test_max_length_continuation(self):
-        """Continue decompression after max_length."""
+        """Continue decompression after max_length until all data is recovered."""
         data = b"x" * 1000
         compressed = lzma_mt.compress(data)
         decompressor = lzma_mt.LZMADecompressor()
 
         result = b""
         remaining = compressed
-        while True:
+        while not decompressor.eof:
             chunk = decompressor.decompress(remaining, max_length=100)
+            assert len(chunk) <= 100
             result += chunk
-            if decompressor.eof or len(chunk) == 0:
-                break
             remaining = b""  # Already consumed
 
-        # May not get all data with this pattern due to buffering
-        assert result.startswith(b"x" * 100)
+        assert result == data
+
+    def test_max_length_larger_than_first_block(self):
+        """max_length beyond the 32KB initial buffer block is honored."""
+        data = b"y" * 200000
+        compressed = lzma_mt.compress(data)
+        decompressor = lzma_mt.LZMADecompressor()
+
+        result = decompressor.decompress(compressed, max_length=150000)
+        assert len(result) == 150000
+        assert not decompressor.eof
+        assert not decompressor.needs_input
+
+        rest = decompressor.decompress(b"")
+        assert result + rest == data
+        assert decompressor.eof
 
     def test_streaming_with_threads(self):
         """Streaming decompression with threads."""
@@ -387,6 +400,100 @@ class TestStdlibCompatibility:
         stdlib_compressor = lzma.LZMACompressor()
         stdlib_compressed = stdlib_compressor.compress(data) + stdlib_compressor.flush()
         assert lzma_mt.decompress(stdlib_compressed) == data
+
+
+# =============================================================================
+# Drop-in Compatibility Tests
+# =============================================================================
+
+class TestDropinCompat:
+    """Behaviors that must match the stdlib lzma module exactly."""
+
+    def test_lzmaerror_is_stdlib_class(self):
+        """Exceptions must be catchable as either lzma_mt or lzma LZMAError."""
+        assert lzma_mt.LZMAError is lzma.LZMAError
+
+    def test_decompress_empty_raises(self):
+        """decompress(b'') raises like stdlib."""
+        with pytest.raises(lzma_mt.LZMAError):
+            lzma_mt.decompress(b"")
+
+    @pytest.mark.parametrize("threads", [1, 2])
+    def test_format_auto_handles_alone(self, threads):
+        """FORMAT_AUTO must decode legacy .lzma (FORMAT_ALONE) data."""
+        data = b"legacy alone-format data " * 100
+        alone = lzma.compress(data, format=lzma.FORMAT_ALONE)
+        assert lzma_mt.decompress(alone, threads=threads) == data
+
+        decompressor = lzma_mt.LZMADecompressor(threads=threads)
+        assert decompressor.decompress(alone) == data
+        assert decompressor.eof
+
+    def test_format_auto_alone_byte_by_byte(self):
+        """Format sniffing works even when input arrives one byte at a time."""
+        data = b"alone data " * 50
+        alone = lzma.compress(data, format=lzma.FORMAT_ALONE)
+        decompressor = lzma_mt.LZMADecompressor(threads=2)
+        result = b""
+        for i in range(len(alone)):
+            result += decompressor.decompress(alone[i:i + 1])
+        assert result == data
+
+    def test_format_auto_xz_byte_by_byte_mt(self):
+        """Sniffing correctly picks the XZ path with trickled input."""
+        data = b"xz data " * 50
+        compressed = lzma_mt.compress(data)
+        decompressor = lzma_mt.LZMADecompressor(threads=2)
+        result = b""
+        for i in range(len(compressed)):
+            result += decompressor.decompress(compressed[i:i + 1])
+        assert result == data
+        assert decompressor.eof
+
+    def test_invalid_format_decompress(self):
+        """Invalid format values raise ValueError like stdlib."""
+        compressed = lzma_mt.compress(b"hello")
+        with pytest.raises(ValueError):
+            lzma_mt.decompress(compressed, format=999)
+        with pytest.raises(ValueError):
+            lzma_mt.LZMADecompressor(format=999)
+
+    def test_non_buffer_input_rejected(self):
+        """Ints and strs are rejected with TypeError like stdlib."""
+        with pytest.raises(TypeError):
+            lzma_mt.decompress(5)
+        with pytest.raises(TypeError):
+            lzma_mt.LZMADecompressor().decompress(5)
+        with pytest.raises(TypeError):
+            lzma_mt.LZMADecompressor().decompress("text")
+
+    def test_memlimit_raises_lzmaerror(self):
+        """Exceeding memlimit raises LZMAError like stdlib."""
+        compressed = lzma_mt.compress(b"x" * 100000)
+        with pytest.raises(lzma_mt.LZMAError):
+            lzma_mt.decompress(compressed, memlimit=1024)
+        with pytest.raises(lzma_mt.LZMAError):
+            lzma_mt.LZMADecompressor(memlimit=1024).decompress(compressed)
+
+    def test_check_unknown_before_decoding(self):
+        """check is CHECK_UNKNOWN before header, then the actual type."""
+        decompressor = lzma_mt.LZMADecompressor()
+        assert decompressor.check == lzma_mt.CHECK_UNKNOWN
+        compressed = lzma_mt.compress(b"data", check=lzma_mt.CHECK_SHA256)
+        decompressor.decompress(compressed)
+        assert decompressor.check == lzma_mt.CHECK_SHA256
+
+    @pytest.mark.parametrize("threads", [1, 2])
+    def test_check_property_matches_stdlib(self, threads):
+        """check property agrees with stdlib for all check types."""
+        for check in (lzma_mt.CHECK_NONE, lzma_mt.CHECK_CRC32,
+                      lzma_mt.CHECK_CRC64, lzma_mt.CHECK_SHA256):
+            compressed = lzma_mt.compress(b"data" * 100, check=check)
+            ours = lzma_mt.LZMADecompressor(threads=threads)
+            ours.decompress(compressed)
+            stdlib = lzma.LZMADecompressor()
+            stdlib.decompress(compressed)
+            assert ours.check == stdlib.check == check
 
 
 # =============================================================================

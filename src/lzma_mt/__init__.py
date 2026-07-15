@@ -494,10 +494,12 @@ __all__ = [
 # The _module_original_ attribute preserves the true module for use by docs/conf.py
 # when resolving source links.
 # Note: Cython extension types (cdef class) are immutable and cannot have their
-# attributes modified, so we skip those silently.
+# attributes modified, so we skip those silently. Objects re-exported from the
+# stdlib (e.g. LZMAError, is_check_supported) are shared with the lzma module
+# and must not be mutated, so only objects defined in this package are touched.
 for _x in __all__:
     _obj = globals().get(_x)
-    if _obj is not None and hasattr(_obj, "__module__"):
+    if _obj is not None and getattr(_obj, "__module__", "").startswith("lzma_mt"):
         try:
             _obj._module_original_ = _obj.__module__
             _obj.__module__ = __name__
