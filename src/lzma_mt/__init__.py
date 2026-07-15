@@ -5,8 +5,9 @@ A drop-in replacement for Python's lzma module with multi-threading support.
 
 Security note: The multi-threaded decoder in xz-utils 5.3.3alpha-5.8.0 has
 CVE-2025-31115 (use-after-free). This module checks the version at runtime
-and raises RuntimeError if vulnerable. Use is_mt_decoder_safe() to check,
-or pass threads=1 to use single-threaded mode.
+and falls back to the single-threaded decoder (the one the stdlib uses) on
+vulnerable versions. Use is_mt_decoder_safe() to check whether
+multi-threaded decoding is actually in effect.
 """
 
 import builtins
@@ -105,6 +106,46 @@ except ImportError:
                 return b""
             self._pos += len(data)
             return data
+
+        def _rewind(self):
+            self._fp.seek(0)
+            self._eof = False
+            self._pos = 0
+            self._decompressor = self._decomp_factory(**self._decomp_args)
+
+        def seek(self, offset, whence=io.SEEK_SET):
+            # Recalculate offset as an absolute file position.
+            if whence == io.SEEK_SET:
+                pass
+            elif whence == io.SEEK_CUR:
+                offset = self._pos + offset
+            elif whence == io.SEEK_END:
+                # Seeking relative to EOF - we need to know the file's size.
+                if self._size < 0:
+                    while self.read(io.DEFAULT_BUFFER_SIZE):
+                        pass
+                offset = self._size + offset
+            else:
+                raise ValueError("Invalid value for whence: {}".format(whence))
+
+            # Make it so that offset is the number of bytes to skip forward.
+            if offset < self._pos:
+                self._rewind()
+            else:
+                offset -= self._pos
+
+            # Read and discard data until we reach the desired position.
+            while offset > 0:
+                data = self.read(min(io.DEFAULT_BUFFER_SIZE, offset))
+                if not data:
+                    break
+                offset -= len(data)
+
+            return self._pos
+
+        def tell(self):
+            """Return the current file position."""
+            return self._pos
 
 # Constants - imported directly from stdlib for guaranteed compatibility
 from lzma import (
@@ -429,7 +470,8 @@ def open(filename, mode="rb", *,
                            preset=preset, filters=filters, threads=threads)
 
     if "t" in mode:
-        encoding = io.text_encoding(encoding)
+        if hasattr(io, "text_encoding"):  # Added in Python 3.10
+            encoding = io.text_encoding(encoding)
         return io.TextIOWrapper(binary_file, encoding, errors, newline)
     else:
         return binary_file
