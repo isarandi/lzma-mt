@@ -392,6 +392,8 @@ def compress(data, format=FORMAT_XZ, check=-1, preset=None, filters=None, *, thr
         filters: Custom filter chain (list of dicts). If specified, preset
                 is ignored.
         threads: Number of threads (default 1). Use 0 for auto-detect.
+                With threads=1 the output is byte-identical to the stdlib;
+                other values use liblzma's multi-threaded XZ encoder.
                 Only used for FORMAT_XZ without custom filters.
 
     Returns:
@@ -431,10 +433,15 @@ def compress(data, format=FORMAT_XZ, check=-1, preset=None, filters=None, *, thr
     _init_stream(&strm)
     _setup_allocator(&alloc)
     strm.allocator = &alloc
-    _setup_encoder_mt(&mt_options, c_preset, <lzma.lzma_check>check, <uint32_t>threads)
 
-    ret = lzma.lzma_stream_encoder_mt(&strm, &mt_options)
+    if threads == 1:
+        # Single-threaded: same encoder as the stdlib (byte-identical output)
+        ret = lzma.lzma_easy_encoder(&strm, c_preset, <lzma.lzma_check>check)
+    else:
+        _setup_encoder_mt(&mt_options, c_preset, <lzma.lzma_check>check, <uint32_t>threads)
+        ret = lzma.lzma_stream_encoder_mt(&strm, &mt_options)
     if ret != lzma.LZMA_OK:
+        lzma.lzma_end(&strm)  # Clean up any partial allocations
         _raise_lzma_error(ret)
 
     try:
@@ -532,7 +539,9 @@ cdef class LZMACompressor:
     """Streaming LZMA compressor with multi-threading support.
 
     Matches the stdlib lzma.LZMACompressor API exactly, with an additional
-    'threads' parameter for multi-threaded compression.
+    'threads' parameter for multi-threaded compression. With threads=1
+    (the default), the same encoder as the stdlib is used and the output
+    is byte-identical.
 
     Note on thread safety: Methods are protected by internal locks and will not
     crash when called from multiple Python threads. However, interleaved calls
@@ -588,8 +597,12 @@ cdef class LZMACompressor:
         _setup_allocator(&self.alloc)
         self.strm.allocator = &self.alloc
 
-        _setup_encoder_mt(&mt_options, c_preset, c_check, <uint32_t>threads)
-        ret = lzma.lzma_stream_encoder_mt(&self.strm, &mt_options)
+        if threads == 1:
+            # Single-threaded: same encoder as the stdlib (byte-identical output)
+            ret = lzma.lzma_easy_encoder(&self.strm, c_preset, c_check)
+        else:
+            _setup_encoder_mt(&mt_options, c_preset, c_check, <uint32_t>threads)
+            ret = lzma.lzma_stream_encoder_mt(&self.strm, &mt_options)
         if ret != lzma.LZMA_OK:
             lzma.lzma_end(&self.strm)  # Clean up any partial allocations
             lzma.PyThread_free_lock(self.lock)
@@ -1012,7 +1025,16 @@ cdef class LZMADecompressor:
                 with nogil:
                     ret = lzma.lzma_code(&self.strm, lzma.LZMA_RUN)
 
-                if ret == lzma.LZMA_STREAM_END:
+                if ret == lzma.LZMA_NO_CHECK or ret == lzma.LZMA_GET_CHECK:
+                    # Stream header parsed; record the integrity check type
+                    self._check = <int>lzma.lzma_get_check(&self.strm)
+                elif ret == lzma.LZMA_BUF_ERROR and self.strm.avail_in == 0 \
+                        and self.strm.avail_out > 0:
+                    # No progress was possible because the input ran out;
+                    # that is not an error (matches CPython)
+                    self._needs_input = True
+                    break
+                elif ret == lzma.LZMA_STREAM_END:
                     self._eof = True
                     self._needs_input = False
                     if self.strm.avail_in > 0:
@@ -1020,19 +1042,21 @@ cdef class LZMADecompressor:
                         self._unused_data = combined_input[remaining_start:]
                     break
                 elif ret == lzma.LZMA_OK:
-                    if self.strm.avail_in == 0:
-                        self._needs_input = True  # Need more input
-                        break
                     if self.strm.avail_out == 0:
-                        if max_length >= 0:
-                            # Output limit hit, buffer remaining input
-                            remaining_start = input_len - self.strm.avail_in
-                            self._input_buffer = combined_input[remaining_start:]
+                        # Output buffer full: grow it, or stop at max_length
+                        avail_out = buf.grow(0, &next_out)
+                        if avail_out == 0:
+                            # max_length reached; buffer unconsumed input
+                            if self.strm.avail_in > 0:
+                                remaining_start = input_len - self.strm.avail_in
+                                self._input_buffer = combined_input[remaining_start:]
                             self._needs_input = False
                             break
-                        avail_out = buf.grow(0, &next_out)
                         self.strm.next_out = next_out
                         self.strm.avail_out = <size_t>avail_out
+                    elif self.strm.avail_in == 0:
+                        self._needs_input = True  # Need more input
+                        break
                 else:
                     buf.on_error()
                     self._errored = True

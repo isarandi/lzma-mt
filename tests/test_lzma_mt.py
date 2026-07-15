@@ -495,6 +495,14 @@ class TestDropinCompat:
             stdlib.decompress(compressed)
             assert ours.check == stdlib.check == check
 
+    def test_compress_threads1_byte_identical(self):
+        """threads=1 produces byte-identical output to the stdlib."""
+        data = b"The quick brown fox jumps over the lazy dog. " * 200
+        assert lzma_mt.compress(data) == lzma.compress(data)
+        assert lzma_mt.compress(data, preset=1) == lzma.compress(data, preset=1)
+        assert (lzma_mt.compress(data, check=lzma_mt.CHECK_SHA256)
+                == lzma.compress(data, check=lzma.CHECK_SHA256))
+
 
 # =============================================================================
 # Memory Limit Tests
