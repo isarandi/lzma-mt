@@ -539,12 +539,20 @@ __all__ = [
 # attributes modified, so we skip those silently. Objects re-exported from the
 # stdlib (e.g. LZMAError, is_check_supported) are shared with the lzma module
 # and must not be mutated, so only objects defined in this package are touched.
-for _x in __all__:
-    _obj = globals().get(_x)
-    if _obj is not None and getattr(_obj, "__module__", "").startswith("lzma_mt"):
+def _set_module_for_docs(module_name, module_globals, all_names):
+    # Done in a function so the loop variables don't leak into the package namespace; the
+    # hasattr guard keeps aliased exports and re-imports idempotent.
+    for name in all_names:
+        obj = module_globals.get(name)
+        if obj is None or not getattr(obj, "__module__", "").startswith("lzma_mt"):
+            continue
         try:
-            _obj._module_original_ = _obj.__module__
-            _obj.__module__ = __name__
+            if not hasattr(obj, "_module_original_"):
+                obj._module_original_ = obj.__module__
+            obj.__module__ = module_name
         except (TypeError, AttributeError):
             # Cython extension types and other immutable types can't be modified
             pass
+
+
+_set_module_for_docs(__name__, globals(), __all__)
