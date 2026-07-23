@@ -1,6 +1,6 @@
 """Type stubs for lzma_mt."""
 
-from typing import IO, Mapping, Sequence, Union
+from typing import IO, Mapping, Sequence
 from os import PathLike
 
 # Constants (re-exported from lzma)

@@ -4,7 +4,6 @@ These tests verify correct behavior when the decompressor's internal input
 buffer is reused, extended, or has data moved within it.
 """
 
-import pytest
 
 import lzma_mt
 

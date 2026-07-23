@@ -12,7 +12,7 @@ Includes:
 
 import lzma
 import pytest
-from hypothesis import given, settings, strategies as st, assume
+from hypothesis import given, settings, strategies as st
 
 import lzma_mt
 
